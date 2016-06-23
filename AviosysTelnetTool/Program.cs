@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Threading;
 using PrimS.Telnet;
 
 namespace AviosysTelnetTool
@@ -9,32 +10,57 @@ namespace AviosysTelnetTool
     /// </summary>
     class Program
     {
-        private const int TimeoutMs = 100;
+        private const int ReadTimeoutInMs = 100;
 
         static void Main(string[] args)
         {
-            using (Client client = new Client("10.0.0.81", 23, new System.Threading.CancellationToken()))
+            using (Client telnetClient = new Client("10.0.0.81", 23, new System.Threading.CancellationToken()))
             {
-                Debug.Assert(client.IsConnected);
+                Debug.Assert(telnetClient.IsConnected);
 
-                string welcomeMessage = client.TerminatedRead("->", TimeSpan.FromMilliseconds(TimeoutMs));
-                Console.Out.WriteLine(welcomeMessage);
-                Debug.Assert(welcomeMessage.TrimEnd(' ').EndsWith("->"));
+                var startTime = DateTime.UtcNow;
+                Console.Out.WriteLine("Test starting at {0}", startTime.ToShortTimeString());
 
-                // Log into the unit using default user name and password
-                client.WriteLine("admin:12345678");
-                string loginResponse = client.TerminatedRead("->", TimeSpan.FromMilliseconds(TimeoutMs));
-                Console.Out.WriteLine(loginResponse);
-                Debug.Assert(loginResponse.TrimEnd(' ').EndsWith("->"));
+                ReadWelcomeMessage(telnetClient);
+                LoginToRemote(telnetClient);
 
-                // Send the help command
-                client.WriteLine("help");
-                string helpResponse = client.TerminatedRead("->", TimeSpan.FromMilliseconds(TimeoutMs));
-                Console.Out.WriteLine(helpResponse);
+                // Continually get the power status
+                while (true)
+                {
+                    try
+                    {
+                        telnetClient.WriteLine("getpower");
+                        string getPowerResponse = telnetClient.TerminatedRead("->", TimeSpan.FromMilliseconds(ReadTimeoutInMs));
+                        Console.Out.WriteLine(getPowerResponse);
+                    }
+                    catch (Exception)
+                    {
+                        var testDuration = DateTime.UtcNow - startTime;
+                        Console.Error.WriteLine("Test terminating at {0} duration {1}", startTime.ToShortTimeString(), testDuration);
+                        break;
+                    }
+                    Thread.Sleep(1000);
+                }
             }
 
             Console.Out.WriteLine("Press [Enter] to terminate.");
             Console.In.ReadLine();
+        }
+
+        private static void LoginToRemote(Client telnetClient)
+        {
+            // Log into the unit using default user name and password
+            telnetClient.WriteLine("admin:12345678");
+            string loginResponse = telnetClient.TerminatedRead("->", TimeSpan.FromMilliseconds(ReadTimeoutInMs));
+            Console.Out.WriteLine(loginResponse);
+            Debug.Assert(loginResponse.TrimEnd(' ').EndsWith("->"));
+        }
+
+        private static void ReadWelcomeMessage(Client telnetClient)
+        {
+            string welcomeMessage = telnetClient.TerminatedRead("->", TimeSpan.FromMilliseconds(ReadTimeoutInMs));
+            Console.Out.WriteLine(welcomeMessage);
+            Debug.Assert(welcomeMessage.TrimEnd(' ').EndsWith("->"));
         }
     }
 }
